@@ -1,0 +1,66 @@
+pipeline{
+    agent any
+    tool {
+        jdk 'JDK_8'
+        maven 'maven_3.9'
+    }
+    options{
+        timeout (time:30 , unit:'MINUTES')
+    }
+    triggers{
+        pollSCM ('H * * * *')
+    }
+    parameters{
+        choice (name:'GOAL', choices:['validate','compile','test','package','install','deploy'])
+    }
+    stages{
+        stage('get the code'){
+            steps{
+                git url: 'https://github.com/wakaleo/game-of-life.git', branch: 'master'
+            }
+        }
+        stage('sonar qube scan'){
+            withSonarQubeEnv('sonar_cloud'){
+                sh 'sonar:sonar -Dsonar.organization=gameoflife_project
+ -Dsonar.token=d4456b652390046d4bf56e464963001bc15e9f32 -Dsonar.projectKey=gameoflife_project'
+            }
+        }
+        stage('build and package the code'){
+            steps{
+                rtMavenDeployer {
+                    id : 'for-jenkins'
+                    releaseRepo : 'forjenkins-libs-snapshot-local'
+                    snapshotRepo : 'forjenkins-libs-snapshot-local'
+                    serverId : 'JENKINS_CONFIG_JFROG'
+                }
+                rtMavenRun {
+                    pom : 'pom.xml'
+                    goals : 'package'
+                    deployerId :'for-jenkins'
+                    tool : 'maven_3.9'
+                }
+                rtPublishBuildInfo{
+                    serverId : 'JENKINS_CONFIG_JFROG'
+                }
+            }
+        }
+        stage('reports'){
+            steps{
+                junit testResults : '**/surefire-reports/TEST-*.xml'
+            }
+        }
+    }
+    post{
+        success{
+            subject : 'Notification for status of our project: ${JOB_NAME}'
+            body: 'our ${JOB_NAME}: is succesfully executed'
+            to: 'mailtrap41@gmail.com'
+        }
+        failure {
+            subject : 'Notification for status of our project: ${JOB_NAME}'
+            body: 'our ${JOB_NAME}: is failed to executed'
+            to: 'mailtrap41@gmail.com'
+        }
+    }
+
+}
